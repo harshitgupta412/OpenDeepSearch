@@ -46,17 +46,19 @@ class SourceProcessor:
         try:
             valid_sources = self._get_valid_sources(sources, num_elements)
             if not valid_sources:
+                print("No valid sources found")
                 return sources
 
             if not pro_mode:
+                print("Processing sources in non-pro mode")
                 # Check if there's a Wikipedia article among valid sources
                 wiki_sources = [(i, source) for i, source in valid_sources 
                               if 'wikipedia.org' in source['link']]
                 if not wiki_sources:
+                    print("No Wikipedia article found")
                     return sources.data
                 # If Wikipedia article exists, only process that
                 valid_sources = wiki_sources[:1]  # Take only the first Wikipedia source
-
             html_contents = await self._fetch_html_contents([s[1]['link'] for s in valid_sources])
             return self._update_sources_with_content(sources.data, valid_sources, html_contents, query)
         except Exception as e:
@@ -67,7 +69,9 @@ class SourceProcessor:
         return [(i, source) for i, source in enumerate(sources.data['organic'][:num_elements]) if source]
 
     async def _fetch_html_contents(self, links: List[str]) -> List[str]:
+        print(links)
         raw_contents = await self.scraper.scrape_many(links)
+        print([x['no_extraction'].success for x in raw_contents.values()])
         return [x['no_extraction'].content for x in raw_contents.values()]
 
     def _process_html_content(self, html: str, query: str) -> str:

@@ -1,4 +1,6 @@
 from typing import Optional, Dict, Any, Literal
+import datetime
+from lotus.web_search import WebSearchCorpus
 from opendeepsearch.serp_search.serp_search import create_search_api, SearchAPI
 from opendeepsearch.context_building.process_sources_pro import SourceProcessor
 from opendeepsearch.context_building.build_context import build_context
@@ -8,17 +10,22 @@ import os
 from opendeepsearch.prompts import SEARCH_SYSTEM_PROMPT
 import asyncio
 import nest_asyncio
+from lotus.models import LM
 load_dotenv()
 
 class OpenDeepSearchAgent:
     def __init__(
         self,
-        model: Optional[str] = None, #We use LiteLLM to call the model
+        model: Optional[str] | LM = None, #We use LiteLLM to call the model
         system_prompt: Optional[str] = SEARCH_SYSTEM_PROMPT,
-        search_provider: Literal["serper", "searxng"] = "serper",
+        search_provider: Literal["serper", "searxng", "lotus"] = "serper",
         serper_api_key: Optional[str] = None,
         searxng_instance_url: Optional[str] = None,
         searxng_api_key: Optional[str] = None,
+        lotus_corpus: list[WebSearchCorpus] = [WebSearchCorpus.GOOGLE, WebSearchCorpus.GOOGLE_SCHOLAR, WebSearchCorpus.BING, WebSearchCorpus.TAVILY],
+        lotus_sort_by_date: bool = False,
+        lotus_end_date: Optional[datetime.date] = None,
+        lotus_multiplier: int = 1,
         source_processor_config: Optional[Dict[str, Any]] = None,
         temperature: float = 0.2, # Slight variation while maintaining reliability
         top_p: float = 0.3, # Focus on high-confidence tokens
@@ -57,7 +64,11 @@ class OpenDeepSearchAgent:
             search_provider=search_provider,
             serper_api_key=serper_api_key,
             searxng_instance_url=searxng_instance_url,
-            searxng_api_key=searxng_api_key
+            searxng_api_key=searxng_api_key,
+            corpus=lotus_corpus,
+            sort_by_date=lotus_sort_by_date,
+            end_date=lotus_end_date,
+            multiplier=lotus_multiplier
         )
 
         # Update source_processor_config with reranker if provided
@@ -77,8 +88,8 @@ class OpenDeepSearchAgent:
 
         # Configure LiteLLM with OpenAI base URL if provided
         openai_base_url = os.environ.get("OPENAI_BASE_URL")
-        if openai_base_url:
-            utils.set_provider_config("openai", {"base_url": openai_base_url})
+        # if openai_base_url:
+            # utils.set_provider_config("openai", {"base_url": openai_base_url})
 
     async def search_and_build_context(
         self,
@@ -104,7 +115,7 @@ class OpenDeepSearchAgent:
             str: A formatted context string built from the processed search results.
         """
         # Get sources from SERP
-        sources = self.serp_search.get_sources(query)
+        sources = self.serp_search.get_sources(query, num_results=max_sources)
 
         # Process sources
         processed_sources = await self.source_processor.process_sources(
@@ -115,7 +126,7 @@ class OpenDeepSearchAgent:
         )
 
         # Build and return context
-        return build_context(processed_sources)
+        return build_context(processed_sources), processed_sources
 
     async def ask(
         self,
@@ -140,13 +151,20 @@ class OpenDeepSearchAgent:
             str: An AI-generated response that answers the query based on the gathered context.
         """
         # Get context from search results
-        context = await self.search_and_build_context(query, max_sources, pro_mode)
+        context, processed_sources = await self.search_and_build_context(query, max_sources, pro_mode)
         # Prepare messages for the LLM
         messages = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"}
         ]
         # Get completion from LLM
+        if isinstance(self.model, LM):
+            response = self.model(
+                messages=[messages],
+                temperature=self.temperature,
+                top_p=self.top_p
+            )
+            return response.outputs[0], processed_sources
         response = completion(
             model=self.model,
             messages=messages,
@@ -154,7 +172,7 @@ class OpenDeepSearchAgent:
             top_p=self.top_p
         )
 
-        return response.choices[0].message.content
+        return response.choices[0].message.content, processed_sources
 
     def ask_sync(
         self,

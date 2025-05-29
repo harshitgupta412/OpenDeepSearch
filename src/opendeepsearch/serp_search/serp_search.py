@@ -2,7 +2,9 @@ import os
 from dataclasses import dataclass
 from typing import Dict, Any, Optional, List, TypeVar, Generic, Union
 from abc import ABC, abstractmethod
-
+from lotus.web_search import WebSearchCorpus, web_search
+import pandas as pd
+import datetime
 import requests
 
 T = TypeVar('T')
@@ -260,12 +262,90 @@ class SearXNGAPI(SearchAPI):
         except Exception as e:
             return SearchResult(error=f"Unexpected error with SearXNG: {str(e)}")
 
+class LotusAPI(SearchAPI):
+    def __init__(
+        self,
+        corpus: list[WebSearchCorpus],
+        sort_by_date: bool = False,
+        end_date: datetime.date | None = None,
+        multiplier: int = 1,
+    ):
+        self.corpus = corpus
+        self.sort_by_date = sort_by_date
+        self.end_date = end_date
+        self.multiplier = multiplier
 
+    def get_sources(self, query: str, num_results: int = 8, stored_location: Optional[str] = None) -> SearchResult[Dict[str, Any]]:
+        collected_results = []
+        num_result_per_corpus = num_results // len(self.corpus)
+        print(num_result_per_corpus)
+        for corpus in self.corpus:
+            df = web_search(
+                corpus,
+                query,
+                num_result_per_corpus * self.multiplier,
+                sort_by_date=self.sort_by_date and not self.end_date,
+            )
+            if len(df) == 0:
+                print(f"No results found for query: {query}")
+                continue
+            df["query"] = query
+            if corpus == WebSearchCorpus.ARXIV:
+                df.rename(
+                    columns={
+                        "abstract": "snippet",
+                        "link": "url",
+                        "published": "date",
+                    },
+                    inplace=True,
+                )
+                df["date"] = df["date"].astype(str)
+            elif (
+                corpus == WebSearchCorpus.GOOGLE
+                or corpus == WebSearchCorpus.GOOGLE_SCHOLAR
+            ):
+                df.rename(columns={"link": "url"}, inplace=True)
+            elif corpus == WebSearchCorpus.BING:
+                df.rename(columns={"name": "title"}, inplace=True)
+            elif corpus == WebSearchCorpus.TAVILY:
+                df.rename(columns={"content": "snippet"}, inplace=True)
+
+            if self.end_date and "date" in df.columns:
+                df["_date"] = pd.to_datetime(df["date"])
+                df = df[df["_date"].dt.date <= self.end_date]
+                df.drop(columns=["_date"], inplace=True)
+
+            if len(df) > num_results:
+                df = df.head(num_results)
+            for _, row in df.iterrows():
+                    result = {
+                        "link": row["url"],
+                        "title": row["title"],
+                        "date": row["date"] if "date" in row else '',
+                        "snippet": [row["snippet"]],
+                    }
+                    collected_results.append(result)
+
+        results = {
+            'organic': collected_results,
+            'images': [],
+            'topStories': [],
+            'graph': None,
+            'answerBox': None,
+            'peopleAlsoAsk': None,
+            'relatedSearches': []
+        }
+        return SearchResult(data=results)
+            
 def create_search_api(
     search_provider: str = "serper",
     serper_api_key: Optional[str] = None,
     searxng_instance_url: Optional[str] = None,
-    searxng_api_key: Optional[str] = None
+    searxng_api_key: Optional[str] = None,
+    corpus: list[WebSearchCorpus] = [WebSearchCorpus.GOOGLE, WebSearchCorpus.GOOGLE_SCHOLAR, WebSearchCorpus.BING, WebSearchCorpus.TAVILY],
+    sort_by_date: bool = False,
+    end_date: datetime.date | None = None,
+    multiplier: int = 1,
 ) -> SearchAPI:
     """
     Factory function to create the appropriate search API client.
@@ -286,5 +366,7 @@ def create_search_api(
         return SerperAPI(api_key=serper_api_key)
     elif search_provider.lower() == "searxng":
         return SearXNGAPI(instance_url=searxng_instance_url, api_key=searxng_api_key)
+    elif search_provider.lower() == "lotus":
+        return LotusAPI(corpus=corpus, sort_by_date=sort_by_date, end_date=end_date, multiplier=multiplier)
     else:
         raise ValueError(f"Invalid search provider: {search_provider}. Must be 'serper' or 'searxng'")
