@@ -8,7 +8,7 @@ from lotus.models import LM
 class OpenDeepSearchTool(Tool):
     name = "web_search"
     description = """
-    Performs web search based on your query (think a Google search) then returns the final answer that is processed by an llm."""
+    Performs web search based on your query (think a Google search) then returns the final answer that is processed by an llm. Always use this tool to get facts."""
     inputs = {
         "query": {
             "type": "string",
@@ -43,9 +43,12 @@ class OpenDeepSearchTool(Tool):
         self.lotus_end_date = lotus_end_date
         self.lotus_multiplier = lotus_multiplier
         self.max_sources = max_sources
+        self.sources = []
     
     def forward(self, query: str):
-        answer = self.search_tool.ask_sync(query, max_sources=self.max_sources, pro_mode=True)
+        answer, sources = self.search_tool.ask_sync(query, max_sources=self.max_sources, pro_mode=True)
+        self.sources += sources["organic"]
+        answer += "\n\nSources: " + "\n".join([f"[{source['title']}]({source['link']})" for source in sources["organic"]])
         return answer
 
     def setup(self):

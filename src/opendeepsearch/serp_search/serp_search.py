@@ -311,8 +311,8 @@ class LotusAPI(SearchAPI):
                 df.rename(columns={"content": "snippet"}, inplace=True)
 
             if self.end_date and "date" in df.columns:
-                df["_date"] = pd.to_datetime(df["date"])
-                df = df[df["_date"].dt.date <= self.end_date]
+                df["_date"] = pd.to_datetime(df["date"], errors='coerce')
+                df = df[df["_date"].dt.date < self.end_date]
                 df.drop(columns=["_date"], inplace=True)
 
             if len(df) > num_results:
@@ -325,6 +325,7 @@ class LotusAPI(SearchAPI):
                         "snippet": [row["snippet"]],
                     }
                     collected_results.append(result)
+            print(f"Searching {corpus} for {query}, {len(df)} results found. Total results: {len(collected_results)}")
 
         results = {
             'organic': collected_results,
