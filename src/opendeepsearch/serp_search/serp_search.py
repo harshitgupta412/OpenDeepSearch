@@ -311,9 +311,12 @@ class LotusAPI(SearchAPI):
                 df.rename(columns={"content": "snippet"}, inplace=True)
 
             if self.end_date and "date" in df.columns:
-                df["_date"] = pd.to_datetime(df["date"], errors='coerce')
-                df = df[df["_date"].dt.date < self.end_date]
-                df.drop(columns=["_date"], inplace=True)
+                try:
+                    df["_date"] = pd.to_datetime(df["date"], errors='coerce')
+                    df = df[df["_date"].dt.date < self.end_date]
+                    df.drop(columns=["_date"], inplace=True)
+                except:
+                    pass
 
             if len(df) > num_results:
                 df = df.head(num_results)
