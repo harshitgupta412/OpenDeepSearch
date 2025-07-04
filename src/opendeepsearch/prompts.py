@@ -233,5 +233,8 @@ planning=PlanningPromptTemplate(
 
 managed_agent=ManagedAgentPromptTemplate(task="", report=""),
 
-final_answer=FinalAnswerPromptTemplate(pre_messages="", post_messages=""),
+final_answer=FinalAnswerPromptTemplate(
+    pre_messages="Provide your final answer to the task using only the information found in the provided context. Ensure your response is clear, concise, and directly addresses the question. Cite all sources from the context using [X] format and include a reference section at the end.",
+    post_messages="Review your answer to confirm that all information is supported by the context, all relevant sources from the context are cited, and a reference section is included."
+),
 )

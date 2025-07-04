@@ -6,6 +6,7 @@ from lotus.web_search import WebSearchCorpus, web_search
 import pandas as pd
 import datetime
 import requests
+import time
 
 T = TypeVar('T')
 
@@ -280,12 +281,19 @@ class LotusAPI(SearchAPI):
         num_result_per_corpus = num_results // len(self.corpus)
         print(num_result_per_corpus)
         for corpus in self.corpus:
-            df = web_search(
-                corpus,
-                query,
-                num_result_per_corpus * self.multiplier,
-                sort_by_date=self.sort_by_date and not self.end_date,
-            )
+            while True:
+                try:
+                    df = web_search(
+                        corpus,
+                        query,
+                        num_result_per_corpus * self.multiplier,
+                        sort_by_date=self.sort_by_date and not self.end_date,
+                    )
+                    break
+                except Exception as e:
+                    print(f"Error searching for query: {query}")
+                    print(e)
+                    time.sleep(1)
             if len(df) == 0:
                 print(f"No results found for query: {query}")
                 continue
